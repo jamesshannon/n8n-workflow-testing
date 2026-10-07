@@ -60,14 +60,15 @@ they become the format:
 
 ## Findings from building it
 
-Verified by reading the n8n source at 2.34.0. Nothing here has been run.
+Verified by reading the n8n source at `master` `0e1c754999` (2.43.0 in development). Nothing here has been run.
 
 - **Mocked error statuses already behave like real ones.** `callEvalMockHandler` throws an
-  error shaped like an Axios or legacy request-library error for status ≥ 400
-  (`packages/core/src/execution-engine/eval-mock-helpers.ts:201-250`). Retries,
+  error shaped like an Axios or legacy request-library error for status ≥ 400, unless the
+  request sets `ignoreHttpStatusErrors`
+  (`packages/core/src/execution-engine/eval-mock-helpers.ts:207-266`). Retries,
   `continueErrorOutput` and `NodeApiError` handling should work unchanged.
 - **Pagination passes through the hook.** `requestWithAuthenticationPaginated` calls
-  `helpers.requestWithAuthentication` / `helpers.request` for each page (`pagination.ts:134,141`),
+  `helpers.requestWithAuthentication` / `helpers.request` for each page (`pagination.ts:135,142`),
   and both are hooked.
 - **HubSpot App Token** goes through `requestWithAuthentication` with a full
   `https://api.hubapi.com` URL (`Hubspot/V2/GenericFunctions.ts:34,43`). Search-by-domain is

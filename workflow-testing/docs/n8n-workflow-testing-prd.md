@@ -2,7 +2,7 @@
 
 **Status:** Draft / internal working document
 **Date:** August 2026 (review findings folded in October 2026)
-**Target n8n version at time of research:** 2.34.0 (`9d9e9bf97e`)
+**Target n8n version at time of research:** 2.34.0 (`9d9e9bf97e`); file references re-checked against `master` at `0e1c754999` (2.43.0 in development, 2026-10-06)
 **Author:** James Shannon
 
 **Forum discussion:** [Core FR & Proposal: Workflow Test Harness & Format](https://community.n8n.io/t/core-fr-proposal-workflow-test-harness-format/306721/3)
@@ -208,7 +208,7 @@ structurally impossible under that design.
 ### 4.1 What it is
 
 Licensed. `getMaxWorkflowsWithEvaluations()` reads `quota:evaluations:maxWorkflows` and
-returns `0` when unset (`license-state.ts:262`); `0` disables. Frontend paywalls on the same
+returns `0` when unset (`license-state.ts:274`); `0` disables. Frontend paywalls on the same
 value (`useEvaluationsLicense.ts`).
 
 **Unverified:** what quota a free community license key grants. The code shows only the
@@ -253,7 +253,7 @@ partly exists already** — it just requires an AI-shaped scaffold around it.
 ### 4.4 The `checkIfEvaluating` anti-pattern
 
 A licensed user today prevents a test run from writing to production with the
-`checkIfEvaluating` operation (`evaluationUtils.ts:301`):
+`checkIfEvaluating` operation (`evaluationUtils.ts:306`):
 
 ```ts
 if (isEvalTriggerExecuted) return [input, []];   // "we're testing" branch
@@ -302,38 +302,38 @@ Hooked into every path a node can use for HTTP:
 
 | Helper | Hook site |
 |---|---|
-| `httpRequest` | `request-helpers/factory.ts:69` |
-| `request` (legacy request-promise style) | `factory.ts:144`, via `normalizeLegacyRequest` |
-| `requestOAuth1` | `factory.ts:195` |
-| `requestOAuth2` | `factory.ts:215` |
-| `requestWithAuthentication` / `httpRequestWithAuthentication` | `authentication.ts:41,165` |
+| `httpRequest` | `request-helpers/factory.ts:70` |
+| `request` (legacy request-promise style) | `factory.ts:145`, via `normalizeLegacyRequest` |
+| `requestOAuth1` | `factory.ts:198` |
+| `requestOAuth2` | `factory.ts:220` |
+| `requestWithAuthentication` / `httpRequestWithAuthentication` | `authentication.ts:71,212` |
 
 Traditional REST-wrapper nodes are covered — Telegram uses `this.helpers.request(options)`
-(`Telegram/GenericFunctions.ts:242`).
+(`Telegram/GenericFunctions.ts:254`).
 
 Planted at two sites, both in n8n's internal tooling for testing its own AI builder and
 agents (**not** the licensed customer feature):
 
-- `modules/instance-ai/eval/execution.service.ts:556` — `createInterceptingHandler`, for
+- `modules/instance-ai/eval/execution.service.ts:655` — `createInterceptingHandler`, for
   workflow evals
-- `modules/instance-ai/eval/agent-execution.service.ts:322` — `createRecordingMockHandler`
-  (defined at `:538`), for agent tool calls. Alongside it, `EvalMockedCredentialsHelper`
-  replaces `additionalData.credentialsHelper` (`:315-321`).
+- `modules/instance-ai/eval/agent-execution.service.ts:330` — `createRecordingMockHandler`
+  (defined at `:548`), for agent tool calls. Alongside it, `EvalMockedCredentialsHelper`
+  replaces `additionalData.credentialsHelper` (`:323-329`).
 
 The handler in `core` is not license-gated.
 
 Related existing capability: the handler already accumulates `interceptedRequests: []` per
-node (`instance-ai/eval/execution.service.ts:868-872`) — in memory, never persisted.
+node (`instance-ai/eval/execution.service.ts:1026-1030`) — in memory, never persisted.
 
-**Mocked error statuses behave like real ones.** When a handler returns `statusCode >= 400`,
-`callEvalMockHandler` (`eval-mock-helpers.ts:201-250`) throws an error shaped like the real
+**Mocked error statuses behave like real ones.** When a handler returns `statusCode >= 400`
+and the request didn't set `ignoreHttpStatusErrors`, `callEvalMockHandler` (`eval-mock-helpers.ts:207-266`) throws an error shaped like the real
 HTTP library's: Axios shape (`isAxiosError`, `response.status/data/headers`) or legacy
 request-promise shape (`statusCode`, `response.body`). Nodes can't tell the difference, so
 retry-on-fail, `continueErrorOutput`, and `NodeApiError` handling all work unchanged. This
 holds as long as the generalized handler keeps routing through `callEvalMockHandler`.
 
 **Paginated requests pass through the hook too.** `requestWithAuthenticationPaginated`
-(`request-helpers/pagination.ts:134,141`) calls `helpers.requestWithAuthentication` or
+(`request-helpers/pagination.ts:135,142`) calls `helpers.requestWithAuthentication` or
 `helpers.request` per page, both of which are hooked. Each page is a separate mockable call.
 
 **No network-error responses.** `EvalMockHttpResponse` (`execution-engine/index.ts:16`) is
@@ -347,7 +347,7 @@ recording at this layer is harder than it looks.
 ### 5.2 Credential synthesis
 
 When a mock handler is present and a node has no credentials configured,
-`node-execution-context.ts:332` synthesizes them, and `eval-mock-helpers.ts:27` generates a
+`node-execution-context.ts:344` synthesizes them, and `eval-mock-helpers.ts:28` generates a
 throwaway RSA key so JWT-signing nodes (Google service accounts) don't crash before reaching
 the interceptor.
 
@@ -361,45 +361,45 @@ team.
 
 ### 5.3 Node-output mocking (`pinData`)
 
-`workflow-execute.ts:1830` — before running any node, if
+`workflow-execute.ts:2365` — before running any node, if
 `runExecutionData.resultData.pinData[nodeName]` exists, the engine substitutes it and skips
-execution. `node-helpers.ts:1265` skips parameter validation for pinned nodes.
+execution. `node-helpers.ts:1351` skips parameter validation for pinned nodes.
 
 Limitations:
 
-- **`runIndex` 0 only** (`workflow-execute.ts:1832`) — a node in a loop gets the same mock
+- **`runIndex` 0 only** (`workflow-execute.ts:1858`) — a node in a loop gets the same mock
   every iteration
-- Honored only in `manual` and `evaluation` execution modes (`workflow-runner.ts:355`).
+- Honored only in `manual` and `evaluation` execution modes (`workflow-runner.ts:536`).
   `n8n execute --id` uses `cli` mode and ignores pin data entirely.
-- Size-capped at 12 MB (`workflow-helpers.ts:39`)
+- Size-capped at 12 MB (`workflow-helpers.ts:48`)
 
 ### 5.4 Per-run injection
 
-- `IWorkflowExecutionDataProcess.pinData` — honored at `workflow-runner.ts:356`
+- `IWorkflowExecutionDataProcess.pinData` — honored at `workflow-runner.ts:537`
   (`data.pinData ?? data.workflowData.pinData`), used per-case by
   `test-runner.service.ee.ts:249`
 - `configureAdditionalData` — `execution-engine/index.ts:80`, invoked at
-  `workflow-runner.ts:415`
+  `workflow-runner.ts:645`
 
 ### 5.5 What's missing
 
 1. **The REST API won't accept mocks.** `manual-run.dto.ts` has no `pinData` field, and
    `workflow-execution.service.ts` reads `workflowData.pinData` (the *saved* workflow) in all
-   three execution cases (lines 155, 192, 229). The capability exists at the runner; the
+   three execution cases (lines 377, 415, 453). The capability exists at the runner; the
    endpoint doesn't expose it. **This is the single blocking gap.**
 2. **`configureAdditionalData` is a closure** — it cannot cross the queue-mode boundary to a
    worker. The eval test runner works around this by putting `pinData` (serializable data)
    into `createRunExecutionData({ resultData: { pinData } })`
-   (`test-runner.service.ee.ts:273-287`). **Any mock spec must be declarative data, not a
+   (`test-runner.service.ee.ts:274-288`). **Any mock spec must be declarative data, not a
    handler function.**
-3. **Mocks don't propagate to sub-workflows.** `workflow-execute-additional-data.ts:560-586`
+3. **Mocks don't propagate to sub-workflows.** `workflow-execute-additional-data.ts:653-680`
    copies a specific whitelist to sub-executions (`executeWorkflow`, `rootExecutionMode`,
    `evaluationRunId`, streaming state). The mock handler is not on it — an Execute Workflow
    node's child run would hit the real network. Small, independently correct fix.
 
    **Precedent:** for agent workflow-tool sub-executions, n8n already propagates the mock
    handler, but through a different seam: `configureToolAdditionalData` on
-   `AgentRuntimeInstrumentation` (`modules/agents/agent-runtime-instrumentation.ts:42-50`),
+   `AgentRuntimeInstrumentation` (`modules/agents/agent-runtime-instrumentation.ts:44-52`),
    called once per tool invocation, not through the whitelist. Either model the fix on that
    seam or explain why the whitelist is the right place. A reviewer will ask.
 4. **No request recording in execution data** (see §9.1).
@@ -515,7 +515,7 @@ schema, three roles.
 ### 6.6 CI-level isolation (recommended, not built)
 
 Run the instance under test in a network-isolated container. Catches escapes at a layer n8n
-cannot see. `packages/testing/containers` already has the stack. Document as recommended CI
+cannot see. `packages/quality/environments/containers` already has the stack. Document as recommended CI
 setup; do not propose as a feature.
 
 ### 6.7 Out of scope: rewriting URLs to a mock server
@@ -547,7 +547,7 @@ makes a test file maintainable a year later, and JSON cannot express them.
 
 **The dependency question resolves in YAML's favor:**
 
-- `yaml` is already a **direct dependency of `packages/cli`** (`packages/cli/package.json:283`),
+- `yaml` is already a **direct dependency of `packages/cli`** (`packages/cli/package.json:290`),
   plus the root and `@n8n/agents`
 - **No JSONC or JSON5 parser exists anywhere in the monorepo** (the only `jsonc` hit is
   `biome.jsonc`, parsed by Biome's own tooling)
@@ -790,7 +790,7 @@ re-proposing it.
 
 ### 9.1 Execution traces are insufficient
 
-`ITaskData` (`interfaces.ts:3351`) records per node: `data` (input/output items),
+`ITaskData` (`interfaces.ts:3605`) records per node: `data` (input/output items),
 `executionTime`, `executionStatus`, `error`, metadata. **There is no record anywhere of the
 HTTP requests a node made.** The most valuable assertion in a write-to-B workflow is
 invisible in an execution trace.
@@ -837,7 +837,7 @@ most of the storage problem solved. Design it in from the start.
 
 ### 9.4 The prune-budget collision
 
-`execution.repository.ts:543-553` finds the 10,001st newest execution by id and deletes
+`execution.repository.ts:709-719` finds the 10,001st newest execution by id and deletes
 everything older, **globally across the instance**.
 
 A suite of 200 cases running on every PR does thousands of executions weekly. **Test runs
@@ -864,7 +864,7 @@ JUnit XML generated from the verdict layer. The verdict layer should be designed
 
 Every captured request carries a live `Authorization` header, API key, or signed token.
 This is **inherent**: the hook fires *after* credential application
-(`authentication.ts:41,165`), which is why the mock is high-fidelity.
+(`authentication.ts:71,212`), which is why the mock is high-fidelity.
 
 ### 10.2 The existing redaction subsystem redacts at the wrong moment
 
@@ -876,8 +876,8 @@ This is **inherent**: the hook fires *after* credential application
 - Strategies: `full-item-redaction`, `node-defined-field-redaction`
 - `sensitiveOutputFields?: string[]` on the node type description — "always redacted
   regardless of workflow policy or user permissions and never revealable"
-  (`interfaces.ts:2968`)
-- Fail-closed application in lifecycle hooks (`execution-lifecycle-hooks.ts:349-377`)
+  (`interfaces.ts:3153`)
+- Fail-closed application in lifecycle hooks (`execution-lifecycle-hooks.ts:346-374`)
 
 But `processExecution` is called only on **push and read** paths. The
 `updateExistingExecution` save paths do not touch it. **Execution data is stored raw and
@@ -889,7 +889,7 @@ the DB and every backup.
 - **Redact at capture time**, not read time. A departure from the existing model, justified
   by what's being stored.
 - **Mask by known value, not field-name heuristic.** We hold the actual credential at the
-  point of application. `eval-mock-helpers.ts:36` already does the heuristic version
+  point of application. `eval-mock-helpers.ts:37` already does the heuristic version
   (`SECRET_NAME_PATTERNS` matching `key|secret|token|password|...`), which is the wrong tool
   when the real secret is available to compare against.
 - **Default to metadata only** — method, URL, header *names*, body size and hash. Full bodies
@@ -898,7 +898,7 @@ the DB and every backup.
 - **Separate nullable `requestCapture` column** on `execution_data`. Gives: independent
   pruning, independent size cap, **column omission on normal reads** (exposure requires a
   deliberate query), and a clean permission gate.
-- **Cap and truncate.** Precedent: pinned data capped at 12 MB (`workflow-helpers.ts:39`).
+- **Cap and truncate.** Precedent: pinned data capped at 12 MB (`workflow-helpers.ts:48`).
 
 ### 10.4 Sequencing consequence
 
@@ -922,12 +922,14 @@ security review and may reasonably be declined.
   `/tests` resource would be the first thing questioned. **Note: `/workflows/{id}/tests` does
   not exist today** — it was only ever a sketch.
 - **Fully async.** The controller does sync setup and returns `202` with a `testRunId`,
-  detaching case execution (`test-runs.controller.ee.ts:225-236`). Public API returns `201`
-  and guards the detached promise (`evaluations.handler.ts:161-163`). Callers poll.
-- **Permissions:** `publicApiScope('testRun:create')` + `projectScope('workflow:execute')`,
-  with the comment "starting a run triggers real executions." That reasoning transfers.
+  detaching case execution (`test-runs.controller.ee.ts:228-239`). Public API returns `201`
+  and guards the detached promise (`evaluations.public.controller.ts:166-174`). Callers poll.
+- **Permissions:** the public endpoint requires `@ApiKeyScope('testRun:create')` +
+  `@ProjectScope('workflow:execute')`. The internal controller's check carries the comment
+  "Starting a run triggers real executions" (`test-runs.controller.ee.ts:210`). That
+  reasoning transfers.
 - **API-key auth is public-API only.** `ApiKeyAuthStrategy` is registered for the public API
-  and MCP (`server.ts:190`, `public-api/index.ts:252`), not `/rest`. `/rest` needs a session
+  and MCP (`server.ts:201`, `public-api/index.ts:252`), not `/rest`. `/rest` needs a session
   cookie.
 
 ### 11.2 The naming collision
@@ -1026,7 +1028,7 @@ Comparatively cheap once v2 exists.
 | A separate evidence table | Over-engineering; execution pruning already fits | Evidence in the execution record; verdict separate |
 | General production request capture in v1 | Live credentials at rest, multi-tenant, long security review | Scope to test runs; propose prod capture separately |
 | Asserting every node's full output | Fails on every run; snapshot death spiral | Path + terminal requests + shape |
-| A big-bang PR | `CONTRIBUTING.md:529` caps PRs at ~1000 lines | Sequenced small PRs |
+| A big-bang PR | `CONTRIBUTING.md:622` caps PRs at ~1000 lines | Sequenced small PRs |
 | Naming files `*eval*` | Collides with the existing feature | `*.n8n-test.yaml` |
 
 ---
@@ -1071,22 +1073,22 @@ Comparatively cheap once v2 exists.
 
 From `CONTRIBUTING.md`:
 
-- **Line 458:** "Feature PRs that arrive with no prior discussion will be closed with a
+- **Line 551:** "Feature PRs that arrive with no prior discussion will be closed with a
   pointer to the forum." A forum topic is mandatory before code. The existing community
   thread is a feature *request*, not agreement to accept an implementation.
-- **Line 529:** "Each PR should add no more than 1000 lines and cover one logical change."
-- **Line 466:** The n8n team handles the most widely used nodes in-house (HTTP Request, Code,
+- **Line 622:** "Each PR should add no more than 1000 lines and cover one logical change."
+- **Line 559:** The n8n team handles the most widely used nodes in-house (HTTP Request, Code,
   Webhook, Form, Schedule). The Evaluation node isn't listed, but modifying a shipped node is
   a harder sell than adding capability beside it. **Propose additively.**
-- **Line 462** (and the directory listing at line 53): "Contact n8n before starting any change
-  under /packages/core." Line 457 names the forum topic as the way to make contact; the
+- **Line 555** (and the directory listing at line 56): "Contact n8n before starting any change
+  under /packages/core." Line 550 names the forum topic as the way to make contact; the
   forum discussion is that contact.
-- **Line 464:** "The n8n team handles changes to identity and access management and to the
+- **Line 557:** "The n8n team handles changes to identity and access management and to the
   credentials system … we keep these in-house." This design touches credentials in three
   places: credential synthesis (§5.2), masking captured requests by real credential value
   (§10.3), and potentially wrapping `credentialsHelper` as `EvalMockedCredentialsHelper`
   does (§5.1). This is a plausible reason for part of the work to be kept in-house. See §14.8.
-- **Line 506:** "Write your PR description, issue, and forum posts in your own words. Do not
+- **Line 599:** "Write your PR description, issue, and forum posts in your own words. Do not
   paste raw model output." Applies to forum replies and to every PR description.
 
 ### Forum discussion
@@ -1097,25 +1099,25 @@ From `CONTRIBUTING.md`:
 
 ## 16. Appendix: File Reference Index
 
-Verified against n8n `2.34.0` (`9d9e9bf97e`). Paths relative to repo root.
+Verified against n8n `master` at `0e1c754999` (2.43.0 in development, 2026-10-06). Paths relative to repo root.
 
 **Mock primitives**
-- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/factory.ts:69,144,195,215` — HTTP hook sites
-- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/authentication.ts:41,165` — authenticated request hooks
-- `packages/core/src/execution-engine/node-execution-context/node-execution-context.ts:332` — credential synthesis
-- `packages/core/src/execution-engine/eval-mock-helpers.ts:27,36` — throwaway RSA key; secret-name heuristics
+- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/factory.ts:70,145,198,220` — HTTP hook sites
+- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/authentication.ts:71,212` — authenticated request hooks
+- `packages/core/src/execution-engine/node-execution-context/node-execution-context.ts:344` — credential synthesis
+- `packages/core/src/execution-engine/eval-mock-helpers.ts:28,37` — throwaway RSA key; secret-name heuristics
 - `packages/core/src/execution-engine/index.ts:80` — `configureAdditionalData`
-- `packages/core/src/execution-engine/workflow-execute.ts:1830,1832` — pinData substitution; runIndex 0
+- `packages/core/src/execution-engine/workflow-execute.ts:1852-1858,2365` — `getPinnedOutput` (runIndex 0); call site
 
 **Existing mock-handler plantings**
-- `packages/cli/src/modules/instance-ai/eval/execution.service.ts:556,868-872` — intercepting handler; in-memory `interceptedRequests`
-- `packages/cli/src/modules/instance-ai/eval/agent-execution.service.ts:315-322,538` — `EvalMockedCredentialsHelper`; `createRecordingMockHandler`
-- `packages/cli/src/modules/agents/agent-runtime-instrumentation.ts:42-50` — `configureToolAdditionalData`, sub-execution propagation precedent
+- `packages/cli/src/modules/instance-ai/eval/execution.service.ts:655,1026-1030` — intercepting handler; in-memory `interceptedRequests`
+- `packages/cli/src/modules/instance-ai/eval/agent-execution.service.ts:323-330,548` — `EvalMockedCredentialsHelper`; `createRecordingMockHandler`
+- `packages/cli/src/modules/agents/agent-runtime-instrumentation.ts:44-52` — `configureToolAdditionalData`, sub-execution propagation precedent
 
 **Mock response behavior**
 - `packages/core/src/execution-engine/index.ts:16,27` — `EvalMockHttpResponse` (no network-error field); `EvalLlmMockHandler`
-- `packages/core/src/execution-engine/eval-mock-helpers.ts:201-250` — `callEvalMockHandler`; status ≥ 400 throws HTTP-library-shaped errors
-- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/pagination.ts:134,141` — per-page calls go through hooked helpers
+- `packages/core/src/execution-engine/eval-mock-helpers.ts:207-266` — `callEvalMockHandler`; status ≥ 400 throws HTTP-library-shaped errors unless the request sets `ignoreHttpStatusErrors`
+- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/pagination.ts:135,142` — per-page calls go through hooked helpers
 - `packages/workflow/src/jmespath-query.ts` — JMESPath, available in expressions
 
 **Nodes used in the reference workflow**
@@ -1124,39 +1126,39 @@ Verified against n8n `2.34.0` (`9d9e9bf97e`). Paths relative to repo root.
 - `packages/nodes-base/nodes/Salesforce/GenericFunctions.ts:96-140` — JWT path; relative URL
 
 **Execution & runner**
-- `packages/cli/src/workflow-runner.ts:355,356,415` — mode gate; per-run pinData; configureAdditionalData
-- `packages/cli/src/workflows/workflow-execution.service.ts:155,192,229` — pinData always from saved workflow
+- `packages/cli/src/workflow-runner.ts:536,537,645` — mode gate; per-run pinData; configureAdditionalData
+- `packages/cli/src/workflows/workflow-execution.service.ts:377,415,453` — pinData always from saved workflow
 - `packages/@n8n/api-types/src/dto/workflows/manual-run.dto.ts` — no pinData field; `schemaFor` dispatch
-- `packages/cli/src/workflow-execute-additional-data.ts:560-586` — sub-execution whitelist
-- `packages/workflow/src/node-helpers.ts:1265` — pinned nodes skip validation
-- `packages/cli/src/workflow-helpers.ts:39` — 12 MB pinData cap
+- `packages/cli/src/workflow-execute-additional-data.ts:653-680` — sub-execution whitelist
+- `packages/workflow/src/node-helpers.ts:1351` — pinned nodes skip validation
+- `packages/cli/src/workflow-helpers.ts:48` — 12 MB pinData cap
 
 **Storage & pruning**
-- `packages/workflow/src/interfaces.ts:3351` — `ITaskData`
+- `packages/workflow/src/interfaces.ts:3605` — `ITaskData`
 - `packages/@n8n/config/src/configs/executions.config.ts:107-118` — prune defaults
-- `packages/@n8n/db/src/repositories/execution.repository.ts:523,542,543-553,566` — prune query; annotation exemptions
+- `packages/@n8n/db/src/repositories/execution.repository.ts:688,709-719,730` — prune query; annotation exemptions
 - `packages/@n8n/db/src/entities/execution-data.ts` — single `text` column
 - `packages/@n8n/db/src/entities/test-run.ee.ts`, `test-case-execution.ee.ts` — outlive-pruning pattern
 
 **Redaction**
 - `packages/cli/src/modules/redaction/redaction-policy.ts:30` — floor violation
 - `packages/cli/src/executions/execution-redaction.ts` — interface
-- `packages/cli/src/execution-lifecycle/execution-lifecycle-hooks.ts:349-377` — fail-closed push redaction
-- `packages/workflow/src/interfaces.ts:2968` — `sensitiveOutputFields`
+- `packages/cli/src/execution-lifecycle/execution-lifecycle-hooks.ts:346-374` — fail-closed push redaction
+- `packages/workflow/src/interfaces.ts:3153` — `sensitiveOutputFields`
 
 **Evaluations**
-- `packages/@n8n/backend-common/src/license-state.ts:262` — license gate
-- `packages/cli/src/evaluation.ee/test-runs.controller.ee.ts:225-236` — async 202
-- `packages/cli/src/public-api/v1/handlers/evaluations/evaluations.handler.ts:161-163` — public API
-- `packages/cli/src/evaluation.ee/test-runner/test-runner.service.ee.ts:249,273-287` — per-case pinData; queue-mode workaround
-- `packages/nodes-base/nodes/Evaluation/utils/evaluationUtils.ts:301` — `checkIfEvaluating`
+- `packages/@n8n/backend-common/src/license-state.ts:274` — license gate
+- `packages/cli/src/evaluation.ee/test-runs.controller.ee.ts:210,228-239` — async 202
+- `packages/cli/src/public-api/v1/controllers/evaluations.public.controller.ts:166-174` — public API
+- `packages/cli/src/evaluation.ee/test-runner/test-runner.service.ee.ts:249,274-288` — per-case pinData; queue-mode workaround
+- `packages/nodes-base/nodes/Evaluation/utils/evaluationUtils.ts:306` — `checkIfEvaluating`
 - `packages/@n8n/api-types/src/dto/evaluations/evaluation-config.dto.ts` — metric schemas
 
 **Other**
 - `packages/@n8n/backend-network/src/http/fake-outbound-http.ts` — `Route` shape
 - `packages/@n8n/backend-network/src/ssrf/ssrf-protection.service.ts` — HTTP-scoped, not a socket backstop
 - `packages/core/nodes-testing/node-test-harness.ts` — in-process harness, unshipped
-- `packages/cli/package.json:283` — `yaml` dependency
+- `packages/cli/package.json:290` — `yaml` dependency
 - `packages/cli/src/modules/source-control.ee/types/exportable-workflow.ts` — omits pinData
 - `packages/@n8n/db/src/migrations/common/1745322634000-CleanEvaluations.ts` — the removal
-- `CONTRIBUTING.md:53,457,458,462,464,466,506,529` — contribution constraints (§15)
+- `CONTRIBUTING.md:56,550,551,555,557,559,599,622` — contribution constraints (§15)

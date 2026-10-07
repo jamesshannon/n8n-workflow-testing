@@ -21,5 +21,5 @@ Forum discussion: [Core FR & Proposal: Workflow Test Harness & Format](https://c
 - **Bring in upstream changes by merging, not rebasing.** Merge n8n release tags into this
   branch; don't rebase it. Rebasing rewrites history and breaks every collaborator's local
   copy.
-- File references in the PRD were checked against n8n `2.34.0` (`9d9e9bf97e`). Re-check
+- File references in the PRD were checked against n8n `master` at `0e1c754999` (2.43.0 in development, 2026-10-06). Re-check
   them after merging a newer release.
