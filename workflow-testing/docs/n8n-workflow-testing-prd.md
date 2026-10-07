@@ -295,8 +295,16 @@ internal tooling and never exposed to users. This is exposure work, not new engi
 
 ### 5.1 HTTP-level interception
 
-`additionalData.evalLlmMockHandler` receives the **fully-built request after credential
-auth** and returns a mock response, or `undefined` to fall through to the real network.
+`additionalData.evalLlmMockHandler` receives the request a node built and returns a mock
+response, or `undefined` to fall through to the real network.
+
+**Where credentials are applied depends on the helper.** On `httpRequest` and `request`,
+the node has applied any credentials itself, so the request carries them. On
+`httpRequestWithAuthentication` and `requestWithAuthentication`, the hook runs **before**
+credential auth and OAuth signing ("intercept before credential auth and OAuth signing",
+`authentication.ts:70,211`). Those requests carry no credentials. The `EvalLlmMockHandler`
+docstring (`execution-engine/index.ts:24`) says "after credential auth", which is wrong for
+these two helpers.
 
 Hooked into every path a node can use for HTTP:
 
@@ -428,7 +436,9 @@ For a read-A → transform → write-B workflow where you mock both ends, you ar
 the transform. **The bug we set out to catch becomes invisible.**
 
 If you mock at the HTTP boundary, the node fully executes and only the socket is faked, and
-**the outbound request becomes an assertable artifact**. For a workflow whose
+**the outbound request becomes an assertable artifact**. One exception: on the
+`*WithAuthentication` helpers, credential auth runs after the hook and is not exercised
+(§5.1). For a workflow whose
 purpose is writing to another system, the outbound request *is* the output. Asserting only
 on the response the node returned tests your mock, not your workflow.
 
@@ -860,11 +870,16 @@ JUnit XML generated from the verdict layer. The verdict layer should be designed
 
 ## 10. Security and Privacy
 
-### 10.1 Captured requests always contain the secret
+### 10.1 Captured requests can contain the secret
 
-Every captured request carries a live `Authorization` header, API key, or signed token.
-This is **inherent**: the hook fires *after* credential application
-(`authentication.ts:71,212`), which is why the mock is high-fidelity.
+A captured request carries a live credential when the node applied the credential itself
+before calling `httpRequest` or `request`. Telegram, for example, puts its access token in
+the URL path (`Telegram/GenericFunctions.ts:235`). On the `*WithAuthentication` helpers
+the hook fires *before* credential application (`authentication.ts:70,211`), so those
+requests carry no `Authorization` header and no secret from the credential (§5.1).
+
+Which nodes apply credentials themselves is per node, so capture must assume any request
+can contain a secret.
 
 ### 10.2 The existing redaction subsystem redacts at the wrong moment
 
@@ -898,6 +913,10 @@ the DB and every backup.
 - **Separate nullable `requestCapture` column** on `execution_data`. Gives: independent
   pruning, independent size cap, **column omission on normal reads** (exposure requires a
   deliberate query), and a clean permission gate.
+
+  > **Contradiction to resolve:** a new column needs a migration, and §12 says v1 has "no
+  > migrations". Either v1 stores captured requests in the existing execution data blob
+  > and the column moves to a later phase, or v1 includes one migration.
 - **Cap and truncate.** Precedent: pinned data capped at 12 MB (`workflow-helpers.ts:48`).
 
 ### 10.4 Sequencing consequence
@@ -1103,7 +1122,7 @@ Verified against n8n `master` at `0e1c754999` (2.43.0 in development, 2026-10-06
 
 **Mock primitives**
 - `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/factory.ts:70,145,198,220` — HTTP hook sites
-- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/authentication.ts:71,212` — authenticated request hooks
+- `packages/core/src/execution-engine/node-execution-context/utils/request-helpers/authentication.ts:71,212` — authenticated request hooks (run before credential auth)
 - `packages/core/src/execution-engine/node-execution-context/node-execution-context.ts:344` — credential synthesis
 - `packages/core/src/execution-engine/eval-mock-helpers.ts:28,37` — throwaway RSA key; secret-name heuristics
 - `packages/core/src/execution-engine/index.ts:80` — `configureAdditionalData`
