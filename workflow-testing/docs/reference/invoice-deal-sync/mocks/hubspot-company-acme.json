@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "companyId": 501,
+      "properties": {
+        "name":   { "value": "Acme Corp" },
+        "domain": { "value": "acme.com" }
+      }
+    }
+  ],
+  "hasMore": false
+}

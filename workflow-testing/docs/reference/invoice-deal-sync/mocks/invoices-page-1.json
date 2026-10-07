@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "id": "inv-1001", "customer_domain": "acme.com",    "region": "us-west",    "currency": "USD", "amount_due": 125000, "status": "paid", "hubspot_deal_id": "9001" },
+    { "id": "inv-1002", "customer_domain": "globex.com",  "region": "us-west",    "currency": "USD", "amount_due": 48000,  "status": "paid", "hubspot_deal_id": "9002" },
+    { "id": "inv-1003", "customer_domain": "initech.com", "region": "eu-central", "currency": "USD", "amount_due": 31000,  "status": "paid", "hubspot_deal_id": "9003" }
+  ],
+  "next": "cur_2"
+}

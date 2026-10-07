@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "companyId": 506,
+      "properties": {
+        "name":   { "value": "Hooli" },
+        "domain": { "value": "hooli.com" }
+      }
+    }
+  ],
+  "hasMore": false
+}

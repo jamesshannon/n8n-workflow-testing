@@ -1,0 +1,218 @@
+# Tests for "Invoice → HubSpot Deal Sync" (invoice-deal-sync.workflow.json).
+#
+# Draft format. Nothing runs this yet; see README.md for which parts of the
+# syntax are provisional.
+#
+# Conventions used below:
+#   respond: { ... }        one response, reused for every matching call
+#   respond: [ ... ]        a sequence; each call consumes one, and a call
+#                           past the end fails the case
+#   bodyFileName            path relative to this file (borrowed from WireMock)
+#   body / query (expect)   subset match: only the keys you name are checked;
+#                           arrays compare element by element, in order
+#   pluck                   collect one path from every item or call, compare
+#                           the resulting list exactly
+#   assert                  an n8n expression that must evaluate to true; under
+#                           `nodes` it runs once per output item ($json), under
+#                           `requests` once per call ($request)
+
+workflow: invoice-deal-sync
+
+# Mocks that apply to every case unless a case overrides the same node + when.
+defaults:
+  mocks:
+    # HubSpot company search is called once per eligible invoice, with the
+    # domain in the URL, so each company needs its own `when`.
+    - node: Lookup Company
+      when: { method: POST, url: https://api.hubapi.com/companies/v2/domains/acme.com/companies }
+      respond: { status: 200, bodyFileName: mocks/hubspot-company-acme.json }
+    - node: Lookup Company
+      when: { method: POST, url: https://api.hubapi.com/companies/v2/domains/globex.com/companies }
+      respond: { status: 200, bodyFileName: mocks/hubspot-company-globex.json }
+    - node: Lookup Company
+      when: { method: POST, url: https://api.hubapi.com/companies/v2/domains/hooli.com/companies }
+      respond: { status: 200, bodyFileName: mocks/hubspot-company-hooli.json }
+
+    - node: Update Deal
+      respond: { status: 200, body: { portalId: 1234, isDeleted: false } }
+
+    # Postgres speaks its own protocol, so the HTTP hook can't see it. Its
+    # output is mocked instead, and nothing about the INSERT can be asserted.
+    - node: Audit Log
+      output:
+        - json: { inserted: true }
+
+cases:
+  - name: syncs eligible invoices to their HubSpot deals
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      - node: Fetch Invoices
+        respond: { status: 200, bodyFileName: mocks/invoices-single-page.json }
+    expect:
+      status: success
+      nodes:
+        No Invoices: { executed: false }
+      requests:
+        - node: Fetch Invoices
+          count: 1
+          calls:
+            - method: GET
+              url: https://billing.example.com/api/v2/invoices
+              query: { since: "2026-09-01", status: paid }
+        - node: Update Deal
+          count: 2
+          calls:
+            - method: PUT
+              url: https://api.hubapi.com/deals/v1/deal/9001
+              body:
+                properties:
+                  - { name: dealstage, value: closedwon }
+                  - { name: amount, value: "1250.00" }
+            - method: PUT
+              url: https://api.hubapi.com/deals/v1/deal/9002
+              body:
+                properties:
+                  - { name: dealstage, value: closedwon }
+                  - { name: amount, value: "480.00" }
+
+  # One invoice fails each Filter Eligible condition, so deleting or
+  # loosening any single condition makes this case fail.
+  #   inv-1003  wrong region       inv-1004  wrong currency
+  #   inv-1005  no HubSpot deal
+  - name: follows pagination and drops each kind of ineligible invoice
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      - node: Fetch Invoices
+        respond:
+          - { status: 200, bodyFileName: mocks/invoices-page-1.json }
+          - { status: 200, bodyFileName: mocks/invoices-page-2.json }
+    expect:
+      status: success
+      nodes:
+        Collect Invoices:
+          count: 1
+          assert: "={{ $json.count === 6 }}"
+        Filter Eligible:
+          count: 3
+          pluck: { path: json.id, equals: [inv-1001, inv-1002, inv-1006] }
+      requests:
+        - node: Fetch Invoices
+          count: 2
+          calls:
+            - query: { since: "2026-09-01" }
+            - query: { since: "2026-09-01", cursor: cur_2 }
+        - node: Lookup Company
+          pluck:
+            path: url
+            equals:
+              - https://api.hubapi.com/companies/v2/domains/acme.com/companies
+              - https://api.hubapi.com/companies/v2/domains/globex.com/companies
+              - https://api.hubapi.com/companies/v2/domains/hooli.com/companies
+        - node: Update Deal
+          pluck:
+            path: url
+            equals:
+              - https://api.hubapi.com/deals/v1/deal/9001
+              - https://api.hubapi.com/deals/v1/deal/9002
+              - https://api.hubapi.com/deals/v1/deal/9006
+          # The expression form, for when a structured match gets awkward:
+          # find the amount property no matter where it sits in the array.
+          assert: "={{ $request.body.properties.find(p => p.name === 'amount').value !== 'NaN' }}"
+
+  - name: invoice with no matching HubSpot company is skipped
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      # Inline body: small enough that a separate file would hurt readability.
+      - node: Fetch Invoices
+        respond:
+          status: 200
+          body:
+            next: null
+            data:
+              - { id: inv-1001, customer_domain: acme.com, region: us-west, currency: USD, amount_due: 125000, status: paid, hubspot_deal_id: "9001" }
+              - { id: inv-1007, customer_domain: piedpiper.com, region: us-west, currency: USD, amount_due: 64000, status: paid, hubspot_deal_id: "9007" }
+      - node: Lookup Company
+        when: { method: POST, url: https://api.hubapi.com/companies/v2/domains/piedpiper.com/companies }
+        respond: { status: 200, bodyFileName: mocks/hubspot-company-none.json }
+    expect:
+      status: success
+      nodes:
+        Match Company:
+          count: 1
+          pluck: { path: json.id, equals: [inv-1001] }
+      requests:
+        - node: Lookup Company
+          count: 2
+        - node: Update Deal
+          count: 1
+          calls:
+            - url: https://api.hubapi.com/deals/v1/deal/9001
+
+  - name: empty API result takes the early-exit branch
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      - node: Fetch Invoices
+        respond: { status: 200, body: { data: [], next: null } }
+    expect:
+      status: success
+      nodes:
+        No Invoices: { executed: true }
+        Split Invoices: { executed: false }
+      requests:
+        - node: Lookup Company
+          count: 0
+        - node: Update Deal
+          count: 0
+
+  # Retries consume from the sequence, so the 500 is used up by the first
+  # attempt and the retry gets the page.
+  - name: a 500 from billing is retried and then succeeds
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      - node: Fetch Invoices
+        respond:
+          - { status: 500, body: { error: internal } }
+          - { status: 200, bodyFileName: mocks/invoices-single-page.json }
+    expect:
+      status: success
+      requests:
+        - node: Fetch Invoices
+          count: 2
+        - node: Alert Billing Channel
+          count: 0
+        - node: Update Deal
+          count: 2
+
+  - name: billing down after all retries alerts the channel and writes nothing
+    input:
+      json: { body: { since: "2026-09-01", region: us-west } }
+    mocks:
+      - node: Fetch Invoices
+        respond:
+          - { status: 500, body: { error: internal } }
+          - { status: 500, body: { error: internal } }
+          - { status: 500, body: { error: internal } }
+      - node: Alert Billing Channel
+        respond: { status: 200, body: { ok: true, channel: C0BILLING, ts: "1759766400.000100" } }
+    expect:
+      # The error output is wired, so the execution itself succeeds.
+      status: success
+      nodes:
+        Collect Invoices: { executed: false }
+      requests:
+        - node: Fetch Invoices
+          count: 3
+        - node: Alert Billing Channel
+          count: 1
+          calls:
+            - method: POST
+              url: https://slack.com/api/chat.postMessage
+              body: { channel: "#billing-alerts" }
+              assert: "={{ $request.body.text.startsWith('Invoice sync failed') }}"
+        - node: Update Deal
+          count: 0

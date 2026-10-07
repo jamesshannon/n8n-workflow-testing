@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "id": "inv-1004", "customer_domain": "umbrella.com", "region": "us-west", "currency": "CAD", "amount_due": 77000, "status": "paid", "hubspot_deal_id": "9004" },
+    { "id": "inv-1005", "customer_domain": "vandelay.com", "region": "us-west", "currency": "USD", "amount_due": 15000, "status": "paid" },
+    { "id": "inv-1006", "customer_domain": "hooli.com",    "region": "us-west", "currency": "USD", "amount_due": 99000, "status": "paid", "hubspot_deal_id": "9006" }
+  ],
+  "next": null
+}

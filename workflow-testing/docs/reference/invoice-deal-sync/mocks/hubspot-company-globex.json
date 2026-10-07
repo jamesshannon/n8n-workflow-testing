@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "companyId": 502,
+      "properties": {
+        "name":   { "value": "Globex" },
+        "domain": { "value": "globex.com" }
+      }
+    }
+  ],
+  "hasMore": false
+}
