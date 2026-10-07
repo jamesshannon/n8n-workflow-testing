@@ -1,13 +1,15 @@
 # Reference workflow: Invoice → HubSpot Deal Sync
 
 A sort-of-realistic read-from-A, write-to-B workflow for discussing and testing the
-format in `../../n8n-workflow-testing-prd.md`. Nothing runs these tests yet.
+format in `../../n8n-workflow-testing-prd.md`. An external experiment runs this
+reference on n8n 2.41.7. See the [execution report](execution-report-n8n-2.41.7.md).
 
 | File | What it is |
 |---|---|
 | `invoice-deal-sync.workflow.json` | The workflow, importable into n8n. No credentials attached. |
 | `invoice-deal-sync.n8n-test.yaml` | Six test cases in the draft format |
 | `mocks/` | Response bodies loaded with `bodyFileName` |
+| `execution-report-n8n-2.41.7.md` | Recorded results, execution scope, and a fixed-version run pack |
 
 ## The workflow
 
@@ -60,7 +62,9 @@ they become the format:
 
 ## Findings from building it
 
-Verified by reading the n8n source at `master` `0e1c754999` (2.43.0 in development). Nothing here has been run.
+The findings below came from reading the n8n source at `master` `0e1c754999`
+(2.43.0 in development). The [execution report](execution-report-n8n-2.41.7.md)
+records the separate runtime checks on n8n 2.41.7.
 
 - **Mocked error statuses already behave like real ones.** `callEvalMockHandler` throws an
   error shaped like an Axios or legacy request-library error for status ≥ 400, unless the
@@ -77,7 +81,10 @@ Verified by reading the n8n source at `master` `0e1c754999` (2.43.0 in developme
 - **No network-error responses.** `EvalMockHttpResponse` is `{ body, headers, statusCode }`
   only. "Endpoint unreachable" and timeouts can't be mocked without extending it (PRD §7.5).
 
-## Unverified until someone runs it
+## Runtime questions
+
+The [execution report](execution-report-n8n-2.41.7.md#answers-to-the-readmes-runtime-questions)
+answers the first four questions on n8n 2.41.7. Retry timing remains a separate measurement.
 
 - Whether the Slack node sends `channel` as `#billing-alerts` or resolves it to an ID first.
 - What the error item looks like on Fetch Invoices' error output (the Slack text uses
