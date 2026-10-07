@@ -518,36 +518,20 @@ Run the instance under test in a network-isolated container. Catches escapes at 
 cannot see. `packages/testing/containers` already has the stack. Document as recommended CI
 setup; do not propose as a feature.
 
-### 6.7 Rejected: rewriting URLs to a separate mock server
+### 6.7 Out of scope: rewriting URLs to a mock server
 
-The alternative that needs no core change: export the workflow, rewrite HTTP node URLs to
-point at a local mock server, and run the copy. A reply in the forum discussion described a
-runner, n8n-check, that works roughly this way ("HTTP Request nodes pointed at a local mock", "runs an
-exported slice in an isolated n8n runtime"). We haven't seen its code.
-
-Rejected, for four reasons:
-
-1. **It tests a modified workflow.** The rewritten URL expression is the one you didn't
-   ship. The wiring bugs this framework exists to catch (§2.2) can sit in exactly that
-   expression. It's a milder form of the `checkIfEvaluating` problem (§4.4).
-2. **It mostly reaches only the HTTP Request node.** Service nodes build URLs internally.
-   The Salesforce node, for example, sends a relative path (`Salesforce/GenericFunctions.ts:109`)
-   resolved against an instance URL cached on the credential. Redirecting it means rewriting
-   credentials, not the node.
-3. **The test file stops being the whole test.** Responses live in another process. Every
-   response should be expressible in the spec file, or in a file it names (§7.5
-   `bodyFileName`). A separate server is not that.
-4. **Shared state brings non-determinism.** One server serving concurrent cases can
-   interleave sequences, with one case consuming another's responses. Mocks carried in each
-   run's payload (§6.5) can't collide.
-
-It works today with no change to n8n. If the core team declines the
-hook changes, something like it is the fallback, with the limits above stated plainly. Say
-that in public rather than dismissing it.
+Exporting the workflow, pointing its URLs at a local mock server, and running the copy is
+out of scope. It tests a modified workflow. If the core team declines the hook changes, it is
+the fallback; n8n-check, described in the forum discussion, already works this way.
 
 ---
 
 ## 7. Test Case Format
+
+**The format is independent of how requests are intercepted.** A case file describes the
+input, the responses external services give, and the requests and outputs expected. It
+contains nothing specific to one runner: no ports, no server setup, no rewritten URLs. A
+different runner, including one that uses a mock server, can read the same files.
 
 ### 7.1 YAML — and the dependency argument
 
@@ -1035,7 +1019,7 @@ Comparatively cheap once v2 exists.
 | Passthrough on unmatched requests | A test can POST to production | Strict fail + pre-flight classification |
 | Inventing a matcher or templating DSL | Unbounded surface to design and defend | Borrow WireMock/Mountebank/Pact semantics; reuse n8n's `{{ }}` |
 | Inventing an assertion mini-language (`a[1].x \| count == 10`) | Same unbounded surface, for assertions | Structured checks + n8n expression `assert`, with `$jmespath()` available (§7.3a) |
-| Rewriting URLs to a separate mock server | Tests a modified workflow; misses service nodes; responses live outside the spec; shared state across cases (§6.7) | Intercept below the node; responses in the spec or `bodyFileName` |
+| Rewriting URLs to a separate mock server | Tests a modified workflow (§6.7) | Intercept below the node |
 | Asserting only status and count | A filter can keep the right number of the wrong rows | `pluck` identities; decoy rows per filter condition |
 | A top-level `/tests` resource | Contradicts how n8n nests test runs and eval configs | Nest under `/workflows/:id/` |
 | Storing specs only in the DB | Won't version with git-based workflows; repeats the eval-config gap | Spec in git; snapshot onto the run |
